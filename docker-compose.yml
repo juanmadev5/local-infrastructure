@@ -15,7 +15,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     networks:
-      - infra-net
+      - dev-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-postgres}"]
       interval: 5s
@@ -45,7 +45,7 @@ services:
     volumes:
       - keycloak_data:/opt/keycloak/data
     networks:
-      - infra-net
+      - dev-net
     depends_on:
       postgres:
         condition: service_healthy
@@ -60,7 +60,7 @@ services:
     volumes:
       - redis_data:/data
     networks:
-      - infra-net
+      - dev-net
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -68,7 +68,7 @@ services:
       retries: 10
 
 networks:
-  infra-net:
+  dev-net:
     driver: bridge
 
 volumes:
