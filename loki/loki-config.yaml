@@ -1,0 +1,49 @@
+# Single-node, filesystem-backed Loki for local dev — mirrors the config used in
+# ht-management-system's production monitoring instance (infrastructure/ec2/loki-config.yaml).
+# Receives logs via OTLP from any project's own local otel-collector.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+schema_config:
+  configs:
+    - from: 2020-10-24
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  metric_aggregation_enabled: true
+  # Required for the OTLP ingestion path (https://grafana.com/docs/loki/latest/send-data/otel/) -
+  # OTLP resource/log attributes that don't map to Loki's fixed label set are stored as structured
+  # metadata instead of being dropped.
+  allow_structured_metadata: true
+
+# No third-party telemetry from this self-hosted instance either - consistent with the rest of
+# this observability stack sending nothing outside this AWS account.
+analytics:
+  reporting_enabled: false

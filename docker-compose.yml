@@ -82,6 +82,18 @@ services:
     networks:
       - dev-net
 
+  loki:
+    image: grafana/loki:3.7.7
+    container_name: local-loki
+    restart: unless-stopped
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    networks:
+      - dev-net
+
   grafana:
     image: grafana/grafana:12.3.0
     container_name: local-grafana
@@ -98,6 +110,7 @@ services:
       - dev-net
     depends_on:
       - prometheus
+      - loki
 
 networks:
   dev-net:
@@ -109,3 +122,4 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  loki_data:
