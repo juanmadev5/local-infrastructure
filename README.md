@@ -1,11 +1,11 @@
 # Infraestructura local compartida
 
-Stack en Docker Compose para levantar de forma rápida y persistente **PostgreSQL**, **Keycloak** y **Redis**. Pensado para que varios proyectos en tu máquina se conecten por `localhost` (o por red Docker si montás otro compose en la misma red).
+Stack en Docker Compose para levantar de forma rápida y persistente **PostgreSQL**, **Keycloak**, **Redis**, **Prometheus** y **Grafana**. Pensado para que varios proyectos en tu máquina se conecten por `localhost` (o por red Docker si montás otro compose en la misma red).
 
 ## Requisitos
 
 - [Docker Engine](https://docs.docker.com/engine/install/) reciente (con plugin Compose v2).
-- Puertos libres en el host según la configuración (por defecto **5432**, **8080**, **6379**).
+- Puertos libres en el host según la configuración (por defecto **5432**, **8080**, **6379**, **9090**, **3000**).
 - Contenedores configurados para ejecutarse con usuarios dedicados (no como root), gracias a la opción `user:` en `docker-compose.yml`.
 
 Comprobación rápida:
@@ -29,6 +29,8 @@ docker compose version
    POSTGRES_PASSWORD=admin
    KC_BOOTSTRAP_ADMIN_USERNAME=admin
    KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+   GF_ADMIN_USER=admin
+   GF_ADMIN_PASSWORD=admin
    ```
 
    Si no querés usar `.env`, Compose igualmente usará los valores por defecto definidos en `docker-compose.yml`, pero para entornos locales conviene personalizar `.env`.
@@ -45,7 +47,7 @@ docker compose version
    docker compose ps
    ```
 
-   Los tres servicios deberían aparecer como `running` (o `healthy` donde aplique).
+   Los cinco servicios deberían aparecer como `running` (o `healthy` donde aplique).
 
 5. **Ver logs** (por ejemplo Keycloak al primer arranque tarda un poco en migrar la BD):
 
@@ -57,15 +59,19 @@ docker compose version
 
 ## Servicios y persistencia
 
-| Servicio    | Imagen / rol | Puerto host (por defecto) | Datos persistentes |
-|------------|----------------|---------------------------|--------------------|
-| `postgres` | PostgreSQL 16  | `5432` (`POSTGRES_PORT`)  | Volumen `postgres_data` |
-| `keycloak` | Keycloak 26.x (`start-dev`) | `8080` (`KEYCLOAK_PORT`) | Volumen `keycloak_data` + base `keycloak` en Postgres |
-| `redis`    | Redis 8.x      | `6379` (`REDIS_PORT`)     | Volumen `redis_data` (AOF) |
+| Servicio     | Imagen / rol | Puerto host (por defecto) | Datos persistentes |
+|-------------|----------------|---------------------------|--------------------|
+| `postgres`   | PostgreSQL 16  | `5432` (`POSTGRES_PORT`)  | Volumen `postgres_data` |
+| `keycloak`   | Keycloak 26.x (`start-dev`) | `8080` (`KEYCLOAK_PORT`) | Volumen `keycloak_data` + base `keycloak` en Postgres |
+| `redis`      | Redis 8.x      | `6379` (`REDIS_PORT`)     | Volumen `redis_data` (AOF) |
+| `prometheus` | Prometheus     | `9090` (`PROMETHEUS_PORT`) | Volumen `prometheus_data` |
+| `grafana`    | Grafana        | `3000` (`GRAFANA_PORT`)   | Volumen `grafana_data` |
 
 - **PostgreSQL**: los datos viven en el volumen nombrado `postgres_data`. Al **primer** arranque con volumen vacío se ejecutan los scripts en `postgres/init/` (solo entonces); ahí se crea la base **`keycloak`** para que Keycloak no use la misma BD que tus aplicaciones en `POSTGRES_DB`.
 - **Keycloak**: guarda estado propio en `keycloak_data` y metadatos de realms/sesiones en Postgres (BD `keycloak`).
 - **Redis**: persistencia con **AOF** (`appendonly yes`, `appendfsync everysec`), datos en `redis_data`.
+- **Prometheus**: configuración en `prometheus/prometheus.yml` (montada de solo lectura); por defecto solo scrapea sus propias métricas (`localhost:9090`). Agregá más `scrape_configs` ahí a medida que sumes exporters o instrumentés tus apps.
+- **Grafana**: viene con el datasource de Prometheus **provisionado automáticamente** (`grafana/provisioning/datasources/datasource.yml`, apunta a `http://prometheus:9090`) y con un proveedor de dashboards por archivo (`grafana/provisioning/dashboards/`) donde podés dejar JSON de dashboards para que se carguen solos.
 
 ## Variables de entorno
 
@@ -81,6 +87,10 @@ Definilas en `.env` (ya presente en el repo). Las que reconoce este `docker-comp
 | `REDIS_PORT` | Puerto de Redis en el host | `6379` |
 | `KC_BOOTSTRAP_ADMIN_USERNAME` | Usuario administrador inicial de Keycloak | `admin` |
 | `KC_BOOTSTRAP_ADMIN_PASSWORD` | Contraseña de ese administrador | `admin` |
+| `PROMETHEUS_PORT` | Puerto de Prometheus en el host | `9090` |
+| `GRAFANA_PORT` | Puerto HTTP de Grafana en el host | `3000` |
+| `GF_ADMIN_USER` | Usuario administrador inicial de Grafana | `admin` |
+| `GF_ADMIN_PASSWORD` | Contraseña de ese administrador | `admin` |
 
 Keycloak se conecta a Postgres con **el mismo** `POSTGRES_USER` / `POSTGRES_PASSWORD` y a la base **`keycloak`**. Tus apps pueden usar la base `POSTGRES_DB` (por defecto `postgres`) o crear otras bases conectando con el mismo usuario (o creando usuarios dedicados desde `psql`).
 
@@ -93,6 +103,8 @@ Usá `localhost` y los puertos que publicaste:
 - **PostgreSQL**: `host=localhost`, `port=<POSTGRES_PORT>`, `user=<POSTGRES_USER>`, `password=<POSTGRES_PASSWORD>`, `database=<nombre de BD>` (por ejemplo `postgres`). No uses la BD `keycloak` para datos de aplicación; está reservada para Keycloak.
 - **Redis**: URL típica `redis://localhost:<REDIS_PORT>/0` (o el índice de base que uses).
 - **Keycloak**: consola de administración en `http://localhost:<KEYCLOAK_PORT>/` (ruta relativa según versión; en Keycloak reciente suele ser `http://localhost:<KEYCLOAK_PORT>/admin/`). Para **OpenID Connect** desde una app en el host, el issuer suele ser `http://localhost:<KEYCLOAK_PORT>/realms/<tu-realm>` (ajustá realm y si usás proxy HTTPS más adelante).
+- **Prometheus**: UI en `http://localhost:<PROMETHEUS_PORT>/` (por defecto `9090`).
+- **Grafana**: UI en `http://localhost:<GRAFANA_PORT>/` (por defecto `3000`), login con `GF_ADMIN_USER` / `GF_ADMIN_PASSWORD`. El datasource "Prometheus" ya queda configurado al primer arranque.
 
 Ejemplo de cadena JDBC:
 
@@ -142,7 +154,7 @@ La opción más simple para “cualquier proyecto en el host” es conectar por 
 | Arrancar en segundo plano | `docker compose up -d` |
 | Parar sin borrar volúmenes | `docker compose stop` |
 | Parar y eliminar contenedores | `docker compose down` |
-| Parar y **borrar todos los datos** (Postgres, Keycloak, Redis) | `docker compose down -v` |
+| Parar y **borrar todos los datos** (Postgres, Keycloak, Redis, Prometheus, Grafana) | `docker compose down -v` |
 | Reiniciar un solo servicio | `docker compose restart redis` |
 | Entrar a Postgres | `docker compose exec postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"` (con variables cargadas desde tu `.env` o sustituyendo a mano) |
 | Ping a Redis | `docker compose exec redis redis-cli ping` |
@@ -167,6 +179,14 @@ La opción más simple para “cualquier proyecto en el host” es conectar por 
 ├── postgres/
 │   └── init/
 │       └── 01-create-keycloak-db.sql
+├── prometheus/
+│   └── prometheus.yml
+├── grafana/
+│   └── provisioning/
+│       ├── datasources/
+│       │   └── datasource.yml
+│       └── dashboards/
+│           └── dashboards.yml
 └── README.md
 ```
 
